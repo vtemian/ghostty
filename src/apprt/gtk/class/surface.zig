@@ -1561,7 +1561,7 @@ pub const Surface = extern struct {
         return self.private().cursor_pos;
     }
 
-    pub fn defaultTermioEnv(self: *Self) !std.process.EnvMap {
+    pub fn defaultTermioEnv(self: *Self) !std.process.Environ.Map {
         const app = Application.default();
         const alloc = app.allocator();
         var env = try internal_os.getEnvMap(alloc);
@@ -1570,23 +1570,23 @@ pub const Surface = extern struct {
         if (app.savedLanguage()) |language| {
             try env.put("LANG", language);
         } else {
-            env.remove("LANG");
+            _ = env.orderedRemove("LANG");
         }
 
         // Don't leak these GTK environment variables to child processes.
-        env.remove("GDK_DEBUG");
-        env.remove("GDK_DISABLE");
-        env.remove("GSK_RENDERER");
+        _ = env.orderedRemove("GDK_DEBUG");
+        _ = env.orderedRemove("GDK_DISABLE");
+        _ = env.orderedRemove("GSK_RENDERER");
 
         // Remove some environment variables that are set when Ghostty is launched
         // from a `.desktop` file, by D-Bus activation, or systemd.
-        env.remove("GIO_LAUNCHED_DESKTOP_FILE");
-        env.remove("GIO_LAUNCHED_DESKTOP_FILE_PID");
-        env.remove("DBUS_STARTER_ADDRESS");
-        env.remove("DBUS_STARTER_BUS_TYPE");
-        env.remove("INVOCATION_ID");
-        env.remove("JOURNAL_STREAM");
-        env.remove("NOTIFY_SOCKET");
+        _ = env.orderedRemove("GIO_LAUNCHED_DESKTOP_FILE");
+        _ = env.orderedRemove("GIO_LAUNCHED_DESKTOP_FILE_PID");
+        _ = env.orderedRemove("DBUS_STARTER_ADDRESS");
+        _ = env.orderedRemove("DBUS_STARTER_BUS_TYPE");
+        _ = env.orderedRemove("INVOCATION_ID");
+        _ = env.orderedRemove("JOURNAL_STREAM");
+        _ = env.orderedRemove("NOTIFY_SOCKET");
 
         // Unset environment varies set by snaps if we're running in a snap.
         // This allows Ghostty to further launch additional snaps.
@@ -1613,7 +1613,7 @@ pub const Surface = extern struct {
     }
 
     /// Filter out environment variables that start with forbidden prefixes.
-    fn filterSnapPaths(gpa: std.mem.Allocator, env_map: *std.process.EnvMap) !void {
+    fn filterSnapPaths(gpa: std.mem.Allocator, env_map: *std.process.Environ.Map) !void {
         comptime assert(build_config.snap);
 
         const snap_vars = [_][]const u8{

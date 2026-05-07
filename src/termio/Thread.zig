@@ -147,8 +147,8 @@ pub fn threadMain(self: *Thread, io: *termio.Termio) void {
         // the error to the surface thread and let the apprt deal with it
         // in some way but this works for now. Without this, the user would
         // just see a blank terminal window.
-        io.renderer_state.mutex.lock();
-        defer io.renderer_state.mutex.unlock();
+        io.renderer_state.mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        defer io.renderer_state.mutex.unlock(std.Io.Threaded.global_single_threaded.io());
         const t = io.renderer_state.terminal;
 
         // Hide the cursor

@@ -213,7 +213,7 @@ pub const Shaper = struct {
             CFReleaseThread.threadMain,
             .{cf_release_thread},
         );
-        cf_release_thr.setName("cf_release") catch {};
+        cf_release_thr.setName(std.Io.Threaded.global_single_threaded.io(), "cf_release") catch {};
 
         return .{
             .alloc = alloc,

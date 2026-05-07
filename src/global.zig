@@ -26,7 +26,7 @@ pub var state: GlobalState = undefined;
 /// be one of these at any given moment. This is extracted into a dedicated
 /// struct because it is reused by main and the static C lib.
 pub const GlobalState = struct {
-    const GPA = std.heap.GeneralPurposeAllocator(.{});
+    const GPA = std.heap.DebugAllocator(.{});
 
     gpa: ?GPA,
     alloc: std.mem.Allocator,
@@ -50,14 +50,6 @@ pub const GlobalState = struct {
 
     /// Initialize the global state.
     pub fn init(self: *GlobalState) !void {
-        // const start = try std.time.Instant.now();
-        // const start_micro = std.time.microTimestamp();
-        // defer {
-        //     const end = std.time.Instant.now() catch unreachable;
-        //     // "[updateFrame critical time] <START us>\t<TIME_TAKEN us>"
-        //     std.log.err("[global init time] start={}us duration={}ns", .{ start_micro, end.since(start) / std.time.ns_per_us });
-        // }
-
         // Initialize ourself to nothing so we don't have any extra state.
         // IMPORTANT: this MUST be initialized before any log output because
         // the log function uses the global state.
@@ -85,7 +77,7 @@ pub const GlobalState = struct {
                 }) break :gpa null;
             }
 
-            break :gpa GPA{};
+            break :gpa .init;
         };
 
         self.alloc = if (self.gpa) |*value|

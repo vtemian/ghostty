@@ -61,7 +61,7 @@ pub const Mailbox = union(enum) {
     pub fn send(
         self: *Mailbox,
         msg: termio.Message,
-        mutex: ?*std.Thread.Mutex,
+        mutex: ?*std.Io.Mutex,
     ) void {
         switch (self.*) {
             .spsc => |*mb| send: {
@@ -87,8 +87,8 @@ pub const Mailbox = union(enum) {
                 // are other messages in the writer queue (resize, focus) that
                 // could acquire the lock. This is why we have to release our lock
                 // here.
-                if (mutex) |m| m.unlock();
-                defer if (mutex) |m| m.lock();
+                if (mutex) |m| m.unlock(std.Io.Threaded.global_single_threaded.io());
+                defer if (mutex) |m| m.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
                 _ = mb.queue.push(msg, .{ .forever = {} });
             },
         }

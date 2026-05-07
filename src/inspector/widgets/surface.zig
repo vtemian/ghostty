@@ -56,8 +56,8 @@ pub const Inspector = struct {
 
         // Draw everything that requires the terminal state mutex.
         {
-            surface.renderer_state.mutex.lock();
-            defer surface.renderer_state.mutex.unlock();
+            surface.renderer_state.mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+            defer surface.renderer_state.mutex.unlock(std.Io.Threaded.global_single_threaded.io());
             const t = surface.renderer_state.terminal;
 
             // Terminal info window
@@ -442,7 +442,7 @@ fn mouseTable(
                 if (state != .press) continue;
                 const button: input.MouseButton = @enumFromInt(i);
                 cimgui.c.ImGui_SameLine();
-                cimgui.c.ImGui_Text("%s", (switch (button) {
+                cimgui.c.ImGui_Text("%s", @as([*]const u8, @ptrCast(switch (button) {
                     .unknown => "?",
                     .left => "L",
                     .middle => "M",
@@ -455,7 +455,7 @@ fn mouseTable(
                     .nine => "{9}",
                     .ten => "{10}",
                     .eleven => "{11}",
-                }).ptr);
+                })));
             }
         }
     }

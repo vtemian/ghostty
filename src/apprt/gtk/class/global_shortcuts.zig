@@ -628,6 +628,9 @@ fn generateToken(buf: *Token) [:0]const u8 {
     return std.fmt.bufPrintZ(
         buf,
         "ghostty_{x:0<7}",
-        .{std.crypto.random.int(u28)},
+        .{rand_int: {
+            const rng_impl: std.Random.IoSource = .{ .io = std.Io.Threaded.global_single_threaded.io() };
+            break :rand_int rng_impl.interface().int(u28);
+        }},
     ) catch unreachable;
 }

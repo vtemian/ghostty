@@ -74,11 +74,24 @@
     };
   in {
     devShells = forAllPlatforms (pkgs: {
-      default = pkgs.callPackage ./nix/devShell.nix {
-        zig =
-          if pkgs.stdenv.hostPlatform.isDarwin
-          then zig.packages.${pkgs.stdenv.hostPlatform.system}.brew."0.15.2"
-          else zig.packages.${pkgs.stdenv.hostPlatform.system}."0.15.2";
+      default = pkgs.callPackage ./nix/devShell.nix 
+      (let
+        libfyaml = if pkgs.stdenv.hostPlatform.isDarwin then
+          pkgs.libfyaml.overrideAttrs (prev: {
+            # Manually fix libfyaml.pc until NixOS/nixpkgs#515614 is available
+            postInstall = (prev.postInstall or "") + ''
+              substituteInPlace "$dev/lib/pkgconfig/libfyaml.pc" \
+                --replace-fail " none required" ""
+            '';
+          })
+        else pkgs.libfyaml;
+
+        appstream = pkgs.appstream.override { libfyaml = libfyaml; };
+        libadwaita = pkgs.libadwaita.override { appstream = appstream; };
+        blueprint-compiler = pkgs.blueprint-compiler.override { libadwaita = libadwaita; };
+      in
+      {
+        zig = zig.packages.${pkgs.stdenv.hostPlatform.system}."0.16.0";
         wraptest = pkgs.callPackage ./nix/pkgs/wraptest.nix {};
         zon2nix = zon2nix;
 
@@ -90,7 +103,9 @@
             wcwidth = pyfinal.callPackage ./nix/pkgs/wcwidth.nix {};
           };
         };
-      };
+
+        inherit appstream libadwaita blueprint-compiler;
+      });
     });
 
     packages =

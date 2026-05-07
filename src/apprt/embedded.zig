@@ -949,7 +949,7 @@ pub const Surface = struct {
         };
     }
 
-    pub fn defaultTermioEnv(self: *const Surface) !std.process.EnvMap {
+    pub fn defaultTermioEnv(self: *const Surface) !std.process.Environ.Map {
         const alloc = self.app.core_app.alloc;
         var env = try internal_os.getEnvMap(alloc);
         errdefer env.deinit();
@@ -999,7 +999,7 @@ pub const Inspector = struct {
     content_scale: f64 = 1,
 
     /// Our previous instant used to calculate delta time for animations.
-    instant: ?std.time.Instant = null,
+    instant: ?std.Io.Timestamp = null,
 
     const Backend = enum {
         metal,
@@ -1228,7 +1228,7 @@ pub const Inspector = struct {
         const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
 
         // Determine our delta time
-        const now = try std.time.Instant.now();
+        const now: std.Io.Timestamp = .now(std.Io.Threaded.global_single_threaded.io(), .awake);
         io.DeltaTime = if (self.instant) |prev| delta: {
             const since_ns: f64 = @floatFromInt(now.since(prev));
             const ns_per_s: f64 = @floatFromInt(std.time.ns_per_s);
@@ -1611,8 +1611,8 @@ pub const CAPI = struct {
         result: *Text,
     ) bool {
         const core_surface = &surface.core_surface;
-        core_surface.renderer_state.mutex.lock();
-        defer core_surface.renderer_state.mutex.unlock();
+        core_surface.renderer_state.mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        defer core_surface.renderer_state.mutex.unlock(std.Io.Threaded.global_single_threaded.io());
 
         // If we don't have a selection, do nothing.
         const core_sel = core_surface.io.terminal.screens.active.selection orelse return false;
@@ -1631,8 +1631,8 @@ pub const CAPI = struct {
         sel: Selection,
         result: *Text,
     ) bool {
-        surface.core_surface.renderer_state.mutex.lock();
-        defer surface.core_surface.renderer_state.mutex.unlock();
+        surface.core_surface.renderer_state.mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        defer surface.core_surface.renderer_state.mutex.unlock(std.Io.Threaded.global_single_threaded.io());
 
         const core_sel = sel.core(
             surface.core_surface.renderer_state.terminal.screens.active,
@@ -2194,8 +2194,8 @@ pub const CAPI = struct {
             result: *Text,
         ) bool {
             const surface = &ptr.core_surface;
-            surface.renderer_state.mutex.lock();
-            defer surface.renderer_state.mutex.unlock();
+            surface.renderer_state.mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+            defer surface.renderer_state.mutex.unlock(std.Io.Threaded.global_single_threaded.io());
 
             // Get our word selection
             const sel = sel: {

@@ -14,6 +14,7 @@ const state = &@import("../../../global.zig").state;
 const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
 const CoreApp = @import("../../../App.zig");
+const compat_file = @import("../../../lib/compat/file.zig");
 const configpkg = @import("../../../config.zig");
 const input = @import("../../../input.zig");
 const internal_os = @import("../../../os/main.zig");
@@ -294,7 +295,7 @@ pub const Application = extern struct {
 
         // Setup our GTK init env vars
         setGtkEnv(&config) catch |err| switch (err) {
-            error.NoSpaceLeft => {
+            error.WriteFailed => {
                 // If we fail to set GTK environment variables then we still
                 // try to start the application...
                 log.warn(
@@ -338,7 +339,7 @@ pub const Application = extern struct {
             // I'm unsure of any scenario where this happens. Because we don't
             // want to litter null checks everywhere, we just exit here.
             log.warn("gdk display is null, exiting", .{});
-            std.posix.exit(1);
+            std.process.exit(1);
         };
 
         // Setup our windowing protocol logic
@@ -1060,7 +1061,11 @@ pub const Application = extern struct {
         }
     }
 
-    fn loadCustomCss(self: *Self) (std.fs.File.ReadError || Allocator.Error)!void {
+    const LoadCustomCssError = std.Io.File.OpenError ||
+        compat_file.ReadToEndAllocError ||
+        std.mem.Allocator.Error;
+
+    fn loadCustomCss(self: *Self) LoadCustomCssError!void {
         const priv: *Private = self.private();
         const alloc = self.allocator();
         const display = gdk.Display.getDefault() orelse {
@@ -1084,7 +1089,11 @@ pub const Application = extern struct {
                 .optional => |path| .{ path, true },
                 .required => |path| .{ path, false },
             };
-            const file = std.fs.openFileAbsolute(path, .{}) catch |err| {
+            const file = std.Io.Dir.openFileAbsolute(
+                std.Io.Threaded.global_single_threaded.io(),
+                path,
+                .{},
+            ) catch |err| {
                 if (err != error.FileNotFound or !optional) {
                     log.warn(
                         "error opening gtk-custom-css file {s}: {}",
@@ -1093,12 +1102,14 @@ pub const Application = extern struct {
                 }
                 continue;
             };
-            defer file.close();
+            defer file.close(std.Io.Threaded.global_single_threaded.io());
 
             const css_file_size_limit = 5 * 1024 * 1024; // 5MB
 
             log.info("loading gtk-custom-css path={s}", .{path});
-            const contents = file.readToEndAlloc(
+
+            const contents = compat_file.readToEndAlloc(
+                file,
                 alloc,
                 css_file_size_limit,
             ) catch |err| switch (err) {
@@ -1108,6 +1119,7 @@ pub const Application = extern struct {
                 },
                 else => |e| return e,
             };
+
             defer alloc.free(contents);
 
             const bytes = glib.Bytes.new(contents.ptr, contents.len);
@@ -1398,7 +1410,7 @@ pub const Application = extern struct {
         const priv = self.private();
         assert(priv.signal_source == null);
         priv.signal_source = glib.unixSignalAdd(
-            std.posix.SIG.USR2,
+            @intFromEnum(std.posix.SIG.USR2),
             handleSigusr2,
             self,
         );
@@ -1851,11 +1863,8 @@ pub const Application = extern struct {
         fn init(class: *Class) callconv(.c) void {
             // Register our compiled resources exactly once.
             {
-                const c = @cImport({
-                    // generated header files
-                    @cInclude("ghostty_resources.h");
-                });
-                if (c.ghostty_get_resource()) |ptr| {
+                const ghostty_gtk_resources = @import("ghostty_gtk_resources");
+                if (ghostty_gtk_resources.ghostty_get_resource()) |ptr| {
                     gio.resourcesRegister(@ptrCast(@alignCast(ptr)));
                 } else {
                     // If we fail to load resources then things will
@@ -2831,7 +2840,7 @@ const Action = struct {
 /// given the runtime environment or configuration.
 ///
 /// This must be called BEFORE GTK initialization.
-fn setGtkEnv(config: *const CoreConfig) error{NoSpaceLeft}!void {
+fn setGtkEnv(config: *const CoreConfig) std.Io.Writer.Error!void {
     assert(gtk.isInitialized() == 0);
 
     var gdk_debug: struct {
@@ -2900,8 +2909,7 @@ fn setGtkEnv(config: *const CoreConfig) error{NoSpaceLeft}!void {
 
     {
         var buf: [1024]u8 = undefined;
-        var fmt = std.io.fixedBufferStream(&buf);
-        const writer = fmt.writer();
+        var writer: std.Io.Writer = .fixed(&buf);
         var first: bool = true;
         inline for (@typeInfo(@TypeOf(gdk_debug)).@"struct".fields) |field| {
             if (@field(gdk_debug, field.name)) {
@@ -2911,15 +2919,14 @@ fn setGtkEnv(config: *const CoreConfig) error{NoSpaceLeft}!void {
             }
         }
         try writer.writeByte(0);
-        const value = fmt.getWritten();
+        const value = writer.buffered();
         log.warn("setting GDK_DEBUG={s}", .{value[0 .. value.len - 1]});
         _ = internal_os.setenv("GDK_DEBUG", value[0 .. value.len - 1 :0]);
     }
 
     {
         var buf: [1024]u8 = undefined;
-        var fmt = std.io.fixedBufferStream(&buf);
-        const writer = fmt.writer();
+        var writer: std.Io.Writer = .fixed(&buf);
         var first: bool = true;
         inline for (@typeInfo(@TypeOf(gdk_disable)).@"struct".fields) |field| {
             if (@field(gdk_disable, field.name)) {
@@ -2929,7 +2936,7 @@ fn setGtkEnv(config: *const CoreConfig) error{NoSpaceLeft}!void {
             }
         }
         try writer.writeByte(0);
-        const value = fmt.getWritten();
+        const value = writer.buffered();
         log.warn("setting GDK_DISABLE={s}", .{value[0 .. value.len - 1]});
         _ = internal_os.setenv("GDK_DISABLE", value[0 .. value.len - 1 :0]);
     }

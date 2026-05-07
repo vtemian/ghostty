@@ -11,7 +11,8 @@ const token_format = std.fmt.comptimePrint("{{x:0>{}}}", .{token_hex_len});
 
 /// Generate a token suitable for use in requests to the XDG Desktop Portal
 pub fn generateToken() usize {
-    return std.crypto.random.int(usize);
+    const rng_impl: std.Random.IoSource = .{ .io = std.Io.Threaded.global_single_threaded.io() };
+    return rng_impl.interface().int(usize);
 }
 
 /// Format a request token consistently for use in portal object paths and payloads.

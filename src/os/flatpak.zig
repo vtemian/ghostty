@@ -10,7 +10,10 @@ const log = std.log.scoped(.flatpak);
 pub fn isFlatpak() bool {
     // If we're not on Linux then we'll make this comptime false.
     if (comptime builtin.os.tag != .linux) return false;
-    return if (std.fs.accessAbsolute("/.flatpak-info", .{})) true else |_| false;
+    return if (std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), "/.flatpak-info", .{}))
+        true
+    else |_|
+        false;
 }
 
 /// A struct to help execute commands on the host via the
@@ -28,7 +31,7 @@ pub fn isFlatpak() bool {
 /// Requires GIO, GLib to be available and linked.
 pub const FlatpakHostCommand = struct {
     const fd_t = posix.fd_t;
-    const EnvMap = std.process.EnvMap;
+    const EnvMap = std.process.Environ.Map;
     const c = @cImport({
         @cInclude("gio/gio.h");
         @cInclude("gio/gunixfdlist.h");
@@ -65,7 +68,7 @@ pub const FlatpakHostCommand = struct {
     /// State of the process. This is updated by the dedicated thread it
     /// runs in and is protected by the given lock and condition variable.
     state: State = .{ .init = {} },
-    state_mutex: std.Thread.Mutex = .{},
+    state_mutex: std.Io.Mutex = .init,
     state_cv: std.Thread.Condition = .{},
 
     /// State the process is in. This can't be inspected directly, you
@@ -120,13 +123,13 @@ pub const FlatpakHostCommand = struct {
     /// Precondition: The self pointer MUST be stable.
     pub fn spawn(self: *FlatpakHostCommand, alloc: Allocator) !u32 {
         const thread = try std.Thread.spawn(.{}, threadMain, .{ self, alloc });
-        thread.setName("flatpak-host-command") catch {};
+        thread.setName(std.Io.Threaded.global_single_threaded.io(), "flatpak-host-command") catch {};
         // We don't track this thread, it will terminate on its own on command exit
         thread.detach();
 
         // Wait for the process to start or error.
-        self.state_mutex.lock();
-        defer self.state_mutex.unlock();
+        self.state_mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        defer self.state_mutex.unlock(std.Io.Threaded.global_single_threaded.io());
         while (self.state == .init) self.state_cv.wait(&self.state_mutex);
 
         return switch (self.state) {
@@ -140,8 +143,8 @@ pub const FlatpakHostCommand = struct {
     /// Wait for the process to end and return the exit status. This
     /// can only be called ONCE. Once this returns, the state is reset.
     pub fn wait(self: *FlatpakHostCommand) !u8 {
-        self.state_mutex.lock();
-        defer self.state_mutex.unlock();
+        self.state_mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        defer self.state_mutex.unlock(std.Io.Threaded.global_single_threaded.io());
 
         while (true) {
             switch (self.state) {
@@ -174,8 +177,8 @@ pub const FlatpakHostCommand = struct {
             r: WaitError!u8,
         ) void,
     ) void {
-        self.state_mutex.lock();
-        defer self.state_mutex.unlock();
+        self.state_mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        defer self.state_mutex.unlock(std.Io.Threaded.global_single_threaded.io());
 
         completion.* = .{
             .callback = (struct {
@@ -234,8 +237,8 @@ pub const FlatpakHostCommand = struct {
     /// command is not in the started state.
     pub fn signal(self: *FlatpakHostCommand, sig: u8, pg: bool) !void {
         const pid = pid: {
-            self.state_mutex.lock();
-            defer self.state_mutex.unlock();
+            self.state_mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+            defer self.state_mutex.unlock(std.Io.Threaded.global_single_threaded.io());
             switch (self.state) {
                 .started => |v| break :pid v.pid,
                 else => return,
@@ -447,8 +450,8 @@ pub const FlatpakHostCommand = struct {
 
     /// Helper to update the state and notify waiters via the cv.
     fn updateState(self: *FlatpakHostCommand, state: State) void {
-        self.state_mutex.lock();
-        defer self.state_mutex.unlock();
+        self.state_mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        defer self.state_mutex.unlock(std.Io.Threaded.global_single_threaded.io());
         defer self.state_cv.broadcast();
         self.state = state;
     }
@@ -464,8 +467,8 @@ pub const FlatpakHostCommand = struct {
     ) callconv(.c) void {
         const self = @as(*FlatpakHostCommand, @ptrCast(@alignCast(ud)));
         const state = state: {
-            self.state_mutex.lock();
-            defer self.state_mutex.unlock();
+            self.state_mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+            defer self.state_mutex.unlock(std.Io.Threaded.global_single_threaded.io());
             break :state self.state.started;
         };
 

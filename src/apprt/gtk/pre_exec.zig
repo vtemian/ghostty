@@ -47,12 +47,10 @@ pub fn preExec(cmd: *Command) ?u8 {
     var expected_cgroup_buf: [256]u8 = undefined;
     const expected_cgroup = cgroup.fmtScope(&expected_cgroup_buf, pid);
 
-    const start = std.time.Instant.now() catch unreachable;
+    const start: std.Io.Timestamp = .now(std.Io.Threaded.global_single_threaded.io(), .awake);
 
     while (true) {
-        const now = std.time.Instant.now() catch unreachable;
-
-        if (now.since(start) > 250 * std.time.ns_per_ms) {
+        if (start.untilNow(std.Io.Threaded.global_single_threaded.io(), .awake).toMilliseconds() > 250) {
             if (cmd.rt_pre_exec_info.linux_cgroup_hard_fail) {
                 log.err("transition to new transient systemd scope took too long", .{});
                 return 127;
@@ -74,7 +72,7 @@ pub fn preExec(cmd: *Command) ?u8 {
             if (std.mem.eql(u8, current_cgroup, expected_cgroup)) return null;
         }
 
-        std.Thread.sleep(25 * std.time.ns_per_ms);
+        std.Io.sleep(std.Io.Threaded.global_single_threaded.io(), .fromMilliseconds(25), .awake) catch unreachable;
     }
 
     return null;

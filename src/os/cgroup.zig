@@ -11,16 +11,16 @@ pub fn current(buf: []u8, pid: u32) ?[]const u8 {
     // 0::/user.slice/user-1000.slice/session-1.scope
     // The cgroup path is the third field.
     const path = std.fmt.bufPrint(&path_buf, "/proc/{}/cgroup", .{pid}) catch return null;
-    const file = std.fs.openFileAbsolute(path, .{}) catch return null;
-    defer file.close();
+    const file = std.Io.Dir.openFileAbsolute(std.Io.Threaded.global_single_threaded.io(), path, .{}) catch return null;
+    defer file.close(std.Io.Threaded.global_single_threaded.io());
 
     var read_buf: [64]u8 = undefined;
-    var file_reader = file.reader(&read_buf);
+    var file_reader = file.reader(std.Io.Threaded.global_single_threaded.io(), &read_buf);
     const reader = &file_reader.interface;
     const len = reader.readSliceShort(buf) catch return null;
     const contents = buf[0..len];
 
     // Find the last ':'
     const idx = std.mem.lastIndexOfScalar(u8, contents, ':') orelse return null;
-    return std.mem.trimRight(u8, contents[idx + 1 ..], " \r\n");
+    return std.mem.trimEnd(u8, contents[idx + 1 ..], " \r\n");
 }
